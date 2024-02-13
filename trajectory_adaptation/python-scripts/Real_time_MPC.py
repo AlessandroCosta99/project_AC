@@ -12,7 +12,7 @@ import scipy
 import moveit_commander
 import message_filters
 import rospy
-from std_msgs.msg import Float64MultiArray, Float64
+from std_msgs.msg import Float64MultiArray, Float64, MultiArrayLayout, MultiArrayDimension
 from geometry_msgs.msg import Point, PoseStamped
 from franka_msgs.msg import FrankaState
 
@@ -47,11 +47,8 @@ class FrankaRobot(object):
                 robot_ee_pose.orientation.y, robot_ee_pose.orientation.z, \
                 robot_ee_pose.orientation.w]]
 
-
-
 class RobotController():
     def __init__(self):
-        self.stop = 0
         self.time_step = 0
         self.prev_time_step = 0
         self.tau = 0
@@ -59,8 +56,8 @@ class RobotController():
         # self.x0 = 0.6436084411618019    #1500
         # self.y0 = -0.0510171173408605   #500
         #self.z0 = 0.8173126349141415    #unknown
-        self.x_f = 0.5496180752549058   #1400
-        self.y_f = -0.21016977052503594 #300
+        self.x_f = 0.4896180752549058   #1400
+        self.y_f = -0.11016977052503594 #300
         #self.z_f = 0.8173126349141415   #same as initial
         self.num_int_points = 10
         self.trajectory_history = []
@@ -73,13 +70,12 @@ class RobotController():
         self.optimal_trajectory_history = []
         # self.start_position = np.array([self.x0, self.y0])
         # self.d = np.linalg.norm(self.target_position - self.start_position) / (self.num_int_points+1)
-        self.d = 0.05
-        self.initial_position = self.start_position  #####################
-        self.optimal_traj_pub = rospy.Publisher('/opt_traj', Float64MultiArray, queue_size=100)
-        # self.theta_pub = rospy.Publisher('/theta', Float64, queue_size=100)
+        self.d = 0.0005
+        self.initial_position =  np.array([0.0,  0.0])
+        self.optimal_traj_pub = rospy.Publisher('/next_pose', Float64MultiArray, queue_size=100)
         self.init_sub()
         self.center_hf = 0
-        #self.loop()
+        self.loop()
         #self.plot_trajectory()
 
     def init_sub(self):
@@ -91,11 +87,13 @@ class RobotController():
         self.robot_pose_init.data = [0.0] *  2
         self.robot_pose_init.data[0] = msg.O_T_EE[12]
         self.robot_pose_init.data[1] = msg.O_T_EE[13]
+        #update initial position with the data received
+        self.initial_position = np.array([self.robot_pose_init.data[0], self.robot_pose_init.data[1]])
         self.initial_position_sub.unregister()
         self.initial_position_sub = None
 
     def stem_pose_callback(self, stem_pose):
-        self.dist_from_center = self.center_hf - stem_pose.msg
+        self.dist_from_center = self.center_hf - stem_pose.data
 
     def cost_callback(self, theta_values):    #usefull for tracking the cost value during the optimization
         points = self.circular_to_cartesian(theta_values)
@@ -126,34 +124,48 @@ class RobotController():
             if i == 0:
                 x[i] = self.initial_position[0]
                 y[i] = self.initial_position[1]
-                z[i] = self.initial_position[2]
+                #z[i] = self.initial_position[2]
 
             else:
                 x[i] = x[i-1] + self.d * np.cos(theta_values[i-1])
                 y[i] = y[i-1] + self.d * np.sin(theta_values[i-1])
-                z[i] = z[i-1]
+                #z[i] = z[i-1]
            
-        return np.column_stack((x, y, z))
+        return np.column_stack((x, y))
     
-    def pub_goal_pose(self):
+    def pub_next_pose(self):
+        layout = MultiArrayLayout()
+        layout.dim = [MultiArrayDimension(), MultiArrayDimension()]
+        layout.dim[0].label = "x"
+        layout.dim[0].size =  1
+        layout.dim[0].stride =  2
+        layout.dim[1].label = "y"
+        layout.dim[1].size =  1
+        layout.dim[1].stride =  1
         
         x = self.optimal_trajectory[1,0]
         y = self.optimal_trajectory[1,1]
-        #self.goal_pose.z = self.optimal_trajectory[1,2]
-        self.goal_pose = np.column_stack((x,y)) 
-        self.optimal_traj_pub.publish(self.goal_pose)
+        data = [x, y]
+        self.next_pose = Float64MultiArray(layout=layout, data=data) 
+        self.optimal_traj_pub.publish(self.next_pose)
 
     def loop(self):
-        
-        self.opt_theta = self.gen_opt_traj()
-        self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
-        #self.initial_position = self.optimal_trajectory[1]
-        initial_position_array = np.array([self.initial_position.x, self.initial_position.y, self.initial_position.z])
+        rate=rospy.Rate(1)
+        while not rospy.is_shutdown():
+            self.opt_theta = self.gen_opt_traj()
+            self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
+            print(self.initial_position)
+            self.pub_next_pose()
+            rospy.sleep(0.1)
+
+            self.initial_position = self.optimal_trajectory[1]
+            if self.initial_position[0] - self.target_position[0] == 0.0:
+                print("Reached target position.")
+                break
+    
         print(self.initial_position)
-        self.pub_goal_pose()
-        print("loop executed, waiting for flag to be True again")
-        if np.all(abs(initial_position_array - self.target_position) == 0.002):
-            self.stop = True
+        # if np.all(abs(self.initial_position - self.target_position) < 0.002):
+
                     				
 
     def plot_trajectory(self):
@@ -178,6 +190,7 @@ if __name__ == '__main__':
     rospy.init_node('optimizer', anonymous=True, disable_signals=True)
     robot = FrankaRobot()
     mpc = RobotController()
+    mpc.loop()
     rospy.spin()
 
 
