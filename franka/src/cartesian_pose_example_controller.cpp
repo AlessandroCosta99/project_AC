@@ -27,7 +27,7 @@ bool CartesianPoseExampleController::init(hardware_interface::RobotHW* robot_har
 
   // SUBSCRIBER
   opt_traj_sub_ = node_handle.subscribe(
-      "/opt_traj", 1, &CartesianPoseExampleController::optPoseCallback, this);
+      "/trajectory", 1, &CartesianPoseExampleController::optPoseCallback, this);
 
   if (cartesian_pose_interface_ == nullptr) {
     ROS_ERROR(
@@ -90,6 +90,7 @@ void CartesianPoseExampleController::update(const ros::Time& /* time */,
 
 
   std::array<double, 16> new_pose = initial_pose_;
+  std::cout << x << std::endl;
   new_pose[12] = x;
   new_pose[13] = y;
   cartesian_pose_handle_ -> setCommand(new_pose);
