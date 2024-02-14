@@ -20,7 +20,7 @@ bool CartesianImpedanceExampleController::init(hardware_interface::RobotHW* robo
   std::vector<double> cartesian_damping_vector;
 
   sub_equilibrium_pose_ = node_handle.subscribe(
-      "equilibrium_pose", 20, &CartesianImpedanceExampleController::equilibriumPoseCallback, this,
+      "target_pose", 20, &CartesianImpedanceExampleController::equilibriumPoseCallback, this,
       ros::TransportHints().reliable().tcpNoDelay());
 
   std::string arm_id;
@@ -233,8 +233,13 @@ void CartesianImpedanceExampleController::equilibriumPoseCallback(
   std::lock_guard<std::mutex> position_d_target_mutex_lock(
       position_and_orientation_d_target_mutex_);
   position_d_target_ << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
-
- 
+//  here i can also subscirbe the orientation
+  Eigen::Quaterniond last_orientation_d_target(orientation_d_target_);
+  orientation_d_target_.coeffs() << msg->pose.orientation.x, msg->pose.orientation.y,
+      msg->pose.orientation.z, msg->pose.orientation.w;
+  if (last_orientation_d_target.coeffs().dot(orientation_d_target_.coeffs()) < 0.0) {
+    orientation_d_target_.coeffs() << -orientation_d_target_.coeffs();
+  }
 }
 
 }  // namespace franka_example_controllers
