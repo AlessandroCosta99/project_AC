@@ -12,8 +12,8 @@ import scipy
 import moveit_commander
 import message_filters
 import rospy
-from std_msgs.msg import Float64MultiArray, Float64, MultiArrayLayout, MultiArrayDimension
-from geometry_msgs.msg import Point, Pose, PoseStamped
+from std_msgs.msg import Float64MultiArray
+from geometry_msgs.msg import PoseStamped
 from franka_msgs.msg import FrankaState
 
 #Optimizer
@@ -71,7 +71,7 @@ class RobotController():
         #self.plot_trajectory()
 
     def init_sub(self):
-        # self.stem_pose_sub = rospy.Subscriber('/stem_pose',Float64MultiArray, self.stem_pose_callback)
+        self.stem_pose_sub = rospy.Subscriber('/stem_pose',Float64MultiArray, self.stem_pose_callback)
         self.initial_position_sub = rospy.Subscriber("franka_state_controller/franka_states", FrankaState, self.franka_state_callback)
 
     def franka_state_callback(self, msg):
@@ -86,7 +86,7 @@ class RobotController():
         self.initial_position_sub = None
 
     def stem_pose_callback(self, stem_pose):
-        self.dist_from_center = self.center_hf - stem_pose.data
+        self.dist_from_center = self.center_hf - stem_pose.data[0]
 
     def cost_callback(self, theta_values):    #usefull for tracking the cost value during the optimization
         points = self.circular_to_cartesian(theta_values)

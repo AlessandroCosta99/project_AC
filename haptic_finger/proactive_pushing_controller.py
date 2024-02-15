@@ -13,7 +13,8 @@ import torch.nn.functional as F
 from openvino.runtime import Core
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray
-# import intel_extension_for_pytorch as ipex
+from franka_msgs.msg import FrankaState
+
 from scipy.spatial.transform import Rotation as R
 
 
@@ -68,23 +69,21 @@ class PushingController:
 																																	# for every new data collection
 																																	# or experiment		
 
-		rospy.init_node('listener', anonymous=True, disable_signals=True)
+		rospy.init_node('stem_pose', disable_signals=True)
 		self.rot_publisher = rospy.Publisher('/stem_pose', Float64MultiArray, queue_size=1)
 		self.init_sub()
 		self.load_model()
-		self.load_openvino()   #################################### <-----------
 		self.load_scalers()
-		print("-scaler loaded")
 		self.load_action_data()
-		print("--action data loaded")
 		self.control_loop()
-		print("---control loop started")
+
 	
 	def init_sub(self):
-		robot_sub = message_filters.Subscriber('/robot_pose', Float64MultiArray)
-		robot_vel_sub = message_filters.Subscriber('/robot_vel', Float64MultiArray)
+		# robot_sub = message_filters.Subscriber('/robot_pose', Float64MultiArray) original
+		robot_sub = message_filters.Subscriber('/franka_state_controller/franka_states', FrankaState)
+		#robot_vel_sub = message_filters.Subscriber('/robot_vel', Float64MultiArray) #ale commented it cause i don't need this now maybe
 		haptic_finger_sub = message_filters.Subscriber("/fing_camera/color/image_raw", Image)
-		self.sync_sub = [robot_sub, robot_vel_sub, haptic_finger_sub]
+		self.sync_sub = [robot_sub, haptic_finger_sub]  #, robot_vel_sub   removed, was the second element of the aray
 		sync_cb = message_filters.ApproximateTimeSynchronizer(self.sync_sub, 1, 0.1, allow_headerless=True)
 		sync_cb.registerCallback(self.callback)
 	
@@ -137,55 +136,33 @@ class PushingController:
 		self.compiled_model_onnx = self.ie.compile_model(model=self.model_onnx, device_name="CPU")
 
 		self.output_layer_onnx = self.compiled_model_onnx.output(0)
-
-	# def scale_nn_input(self, robot, action):
-
-	# 	scaled_robot  = np.zeros_like(robot).astype(np.float32)
-	# 	scaled_action = np.zeros_like(action).astype(np.float32)
-	# 	for index, min_max_scalar in enumerate(self.robot_min_max_scalar):
-	# 		scaled_robot[:, index] = np.squeeze(min_max_scalar.transform(robot[:, index].reshape(-1, 1)))
-	# 		scaled_action[:, index] = np.squeeze(min_max_scalar.transform(action[:, index].reshape(-1, 1)))
-
-	# 	self.robot_data_scaled[self.time_step] = scaled_robot
-	# 	self.action_data_scaled[self.time_step] = scaled_action
-	# 	scaled_action = np.concatenate((scaled_robot, scaled_action), axis=0).astype(np.float32)
-
-	# 	self.action_concat[self.time_step] = scaled_action
-
-	# 	self.scaled_haptic = torch.from_numpy(self.haptic_finger_scaled[self.time_step-6:self.time_step-1]).unsqueeze(1)
-	# 	self.scaled_action = torch.from_numpy(self.action_concat[self.time_step-1]).unsqueeze(1)
-
-	# 	self.final_haptic_input[self.time_step] = self.scaled_haptic[:, 0, :, :, :]
-	# 	self.final_action_input[self.time_step] = self.scaled_action[:, 0, :]
-
 	
-	def callback(self, robot_poes_msg, robot_vel_msg, haptic_finger_msg):
-		self.stop = robot_poes_msg.data[-1]
+	def callback(self, robot_poes_msg, haptic_finger_msg): #,robot_vel_msg ale removed this, was third element including self
+		#self.stop = robot_poes_msg.data[-1]
 		if self.stop == 0:
-			rot_mat = R.from_matrix([[robot_poes_msg.data[0], robot_poes_msg.data[4], robot_poes_msg.data[8]],\
-									[robot_poes_msg.data[1], robot_poes_msg.data[5], robot_poes_msg.data[9]],\
-									[robot_poes_msg.data[2], robot_poes_msg.data[6], robot_poes_msg.data[10]]])												
+			rot_mat = R.from_matrix([[robot_poes_msg.O_T_EE[0], robot_poes_msg.O_T_EE[4], robot_poes_msg.O_T_EE[8]],\
+									[robot_poes_msg.O_T_EE[1], robot_poes_msg.O_T_EE[5], robot_poes_msg.O_T_EE[9]],\
+									[robot_poes_msg.O_T_EE[2], robot_poes_msg.O_T_EE[6], robot_poes_msg.O_T_EE[10]]])												
 			
 			euler = rot_mat.as_euler('zyx', degrees=True)
 			quat  = rot_mat.as_quat()
 
-			self.robot_pose_data[self.time_step] = np.array([robot_poes_msg.data[12], robot_poes_msg.data[13], robot_poes_msg.data[14],\
+			self.robot_pose_data[self.time_step] = np.array([robot_poes_msg.O_T_EE[12], robot_poes_msg.O_T_EE[13], robot_poes_msg.O_T_EE[14],\
 														 euler[0], euler[1], euler[2],\
 														quat[0], quat[1], quat[2], quat[3]])
 
-			self.robot_vel_data[self.time_step] = np.array(robot_vel_msg.data)
+			#self.robot_vel_data[self.time_step] = np.array(robot_vel_msg.data)
 
 			haptic_finger_img = self.bridge.imgmsg_to_cv2(haptic_finger_msg, desired_encoding='passthrough')
 			cv2.imwrite(self.save_path + "/image/" + str(self.time_step) + ".png", haptic_finger_img)
 			haptic_finger_img = cv2.rectangle(haptic_finger_img,(0,230),(480,480),(0,0,0),-1)
 			self.haptic_finger_data_raw[self.time_step] = haptic_finger_img
-			haptic_finger_img = PILImage.fromarray(haptic_finger_img).resize((64, 64), PILImage.Resampling.LANCZOS)
+			haptic_finger_img = PILImage.fromarray(haptic_finger_img).resize((64, 64), PILImage.LANCZOS)
 			# haptic_finger_img = np.fromstring(haptic_finger_img.tobytes(), dtype=np.uint8)
 			haptic_finger_img = np.array(haptic_finger_img).astype(np.uint8)
 			# haptic_finger_img = np.ascontiguousarray(np.array(haptic_finger_img).astype(np.uint8))
 			haptic_finger_img = haptic_finger_img.astype(np.float32)
 			# haptic_finger_img = np.transpose(haptic_finger_img, (2, 0, 1)).astype(np.float32) # (64, 64, 3) -> (3, 64, 64)
-
 			# self.haptic_finger_data[self.time_step] = haptic_finger_img
 
 			haptic_finger_img = haptic_finger_img / 255.0
@@ -226,9 +203,7 @@ class PushingController:
 		# tac_norm = tac_pred_frame - self.haptic_finger_data[0] / 255.0
 		tac_norm = tac_pred_frame[2] - tac_pred_frame[6]
 		tactile_tensor = tac_norm.unsqueeze(0) # torch
-		# tactile_tensor = torch.from_numpy(tac_norm) # openvino
 		stem_pose = self.local_model(tactile_tensor.float()).item() # torch
-		# stem_pose = self.local_model(tactile_tensor.float()).item() # openvino
 		self.localisation[self.time_step] = stem_pose
 
 		return stem_pose
@@ -254,7 +229,7 @@ class PushingController:
 
 		# Publish th 1d stem pose (distance from the sensor camera)
 
-		step_pose_msg.data = [stem_pose, 0.0]
+		step_pose_msg.data = [stem_pose]
 		
 		self.rot_publisher.publish(step_pose_msg)
 
