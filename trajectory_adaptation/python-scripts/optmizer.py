@@ -12,7 +12,7 @@ import scipy
 import moveit_commander
 import message_filters
 import rospy
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, MultiArrayDimension, MultiArrayLayout
 from geometry_msgs.msg import PoseStamped
 from franka_msgs.msg import FrankaState
 
@@ -32,24 +32,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-
-class FrankaRobot(object):
-    def __init__(self):
-        super(FrankaRobot, self).__init__()
-
-    def get_robot_task_state(self):
-        robot_ee_pose = self.move_group.get_current_pose().pose
-        return [[robot_ee_pose.position.x, robot_ee_pose.position.y, \
-                robot_ee_pose.position.z], [robot_ee_pose.orientation.x, \
-                robot_ee_pose.orientation.y, robot_ee_pose.orientation.z, \
-                robot_ee_pose.orientation.w]]
-
 class RobotController():
     def __init__(self):
         self.time_step = 0
         self.prev_time_step = 0
-        self.x_f = 0.55 
-        self.y_f = -0.30 
+        self.x_f = 0.6
+        self.y_f = -0.21
         self.num_int_points = 10
         self.trajectory_history = []
         self.cost_history = []
@@ -65,8 +53,10 @@ class RobotController():
         self.d = 0.001
         self.initial_position =  np.array([0.0,  0.0, 0.0])
         self.optimal_traj_pub = rospy.Publisher('/next_pose', PoseStamped, queue_size=100)
+        self.candidate_actions_pub = rospy.Publisher('/candidate_action', Float64MultiArray, queue_size=10)
+
         self.init_sub()
-        self.center_hf = 0
+        center_hf = 0
         self.loop()
         #self.plot_trajectory()
 
@@ -86,7 +76,9 @@ class RobotController():
         self.initial_position_sub = None
 
     def stem_pose_callback(self, stem_pose):
-        self.dist_from_center = self.center_hf - stem_pose.data[0]
+        center_hf = 0
+        self.dist_from_center = center_hf - stem_pose
+        print(stem_pose)
 
     def cost_callback(self, theta_values):    #usefull for tracking the cost value during the optimization
         points = self.circular_to_cartesian(theta_values)
@@ -122,10 +114,22 @@ class RobotController():
                 x[i] = x[i-1] + self.d * np.cos(theta_values[i-1])
                 y[i] = y[i-1] + self.d * np.sin(theta_values[i-1])
 
-           
         return np.column_stack((x, y))
     
-    def pub_next_pose(self):
+    def stack_constant_actions(self):
+        optimal_actions = self.optimal_trajectory[1:11,:]
+        constant_values = np.array([[0.7], [0.726858], [0.0265717,], [0.686072]])
+        new_columns = np.column_stack([constant_values[i] * np.ones((optimal_actions.shape[0],  1)) for i in range(4)])
+        candidate_actions_full = np.hstack((optimal_actions, new_columns))
+        print(candidate_actions_full)
+        self.pub_candidate_actions(candidate_actions_full)
+
+    def pub_candidate_actions(self, actions):  #this goes to the stem_pose_predictor
+        candidate_actions = Float64MultiArray()
+        candidate_actions.data = actions[1:11,:].flatten().tolist() 
+        self.candidate_actions_pub.publish(candidate_actions)
+    
+    def pub_next_pose(self):  #this goes to the robot
         pose_msg = PoseStamped()
         pose_msg.header.frame_id = "panda_link0"
         pose_msg.header.stamp = rospy.Time.now()
@@ -135,46 +139,21 @@ class RobotController():
         self.optimal_traj_pub.publish(pose_msg)
 
     def loop(self):
-        rate=rospy.Rate(1001)    #not sure if it will work
+        rate=rospy.Rate(11)    #not sure if it will work
 
         while not rospy.is_shutdown():
             self.opt_theta = self.gen_opt_traj()
             self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
-            print(self.initial_position)
             self.pub_next_pose()
-
+            self.stack_constant_actions()
 
             self.initial_position = self.optimal_trajectory[1]
-            if self.initial_position[0] - self.target_position[0] < 0.005:
+            if self.initial_position[0] - self.target_position[0] < 0.005:  #maybe change here
                 print("Reached target position.")
                 break
-    
-        print(self.initial_position)
-        # if np.all(abs(self.initial_position - self.target_position) < 0.002):
-
-                    				
-
-    def plot_trajectory(self):
-        # Plot the trajectory at each step
-        #for i, trajectory in enumerate(self.trajectory_history):
-        #   plt.plot(trajectory[:, 0], trajectory[:, 1], label=f'Step {i}')
-
-        # Plot the final optimized trajectory
-        plt.scatter(self.optimized_trajectory[:, 0], self.optimized_trajectory[:, 1], label='Optimized', color='red', marker='x')
-
-        # Plot the target position
-        plt.scatter(self.target_position[0], self.target_position[1], label='Target', color='green', marker='o')
-        plt.scatter(self.initial_position[0], self.initial_position[1], label='Start', color='pink', marker='o')
-    
-        plt.legend()
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.title('Optimization Steps for Trajectory with Fixed Distance')
-        plt.show()
 
 if __name__ == '__main__':
     rospy.init_node('optimizer') # , anonymous=True, disable_signals=True)
-    robot = FrankaRobot()
     mpc = RobotController()
     mpc.loop()
     rospy.spin()
