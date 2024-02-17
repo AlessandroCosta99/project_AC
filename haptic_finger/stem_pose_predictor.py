@@ -10,7 +10,6 @@ from pickle import load
 import PIL.Image as PILImage
 from cv_bridge import CvBridge
 import torch.nn.functional as F
-from openvino.runtime import Core
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray
 from franka_msgs.msg import FrankaState
@@ -79,12 +78,12 @@ class PushingController:
 	
 	def init_sub(self):
 		robot_sub = message_filters.Subscriber('/franka_state_controller/franka_states', FrankaState)
-		candidate_actions_sub = message_filters.Subscriber('/candidate_actions', Float64MultiArray)
+		candidate_actions_sub = message_filters.Subscriber('/candidate_action', Float64MultiArray)
 		haptic_finger_sub = message_filters.Subscriber("/fing_camera/color/image_raw", Image)
 		self.sync_sub = [robot_sub, candidate_actions_sub, haptic_finger_sub]
-		sync_cb = message_filters.ApproximateTimeSynchronizer(self.sync_sub, 1, 0.1, allow_headerless=True)
+		sync_cb = message_filters.ApproximateTimeSynchronizer(self.sync_sub,  10, 0.1, allow_headerless=True) 
 		sync_cb.registerCallback(self.callback)
-		print("ciao1")
+
 
 	def load_model(self):
 		n_past = 5
@@ -104,7 +103,6 @@ class PushingController:
 									"/home/alessandro/tactile_control_ale_ws/src/haptic_finger_control/force_localisation/dataset/localisation_cnn_crop64.pth"))
 		self.local_model = self.local_model.float()
 		self.local_model.eval()
-		print("ciao2")
 		self.model_warmup()
 
 	def model_warmup(self):
@@ -121,18 +119,12 @@ class PushingController:
 
 	def load_scalers(self):
 		scaler_path = '/home/alessandro/tactile_control_ale_ws/src/haptic_finger_control/scalars'
+		
 		self.robot_min_max_scalar = [load(open(scaler_path + '/robot_min_max_scalar_'+feature +'.pkl', 'rb'))\
 															 for feature in ['px', 'py', 'pz', 'ex', 'ey', 'ez']]
-		print("scalers loaded")
+
 	
-	# def load_action_data(self):
-	# 	# self.action_data = np.load("/home/alessandro/tactile_control_ale/src/haptic_finger_control/RT-Data/proactive/robot_pose_new.npy")[:, :6] # linear
-	# 	self.action_data = np.load("/home/alessandro/tactile_control_ale_ws/src/haptic_finger_control/RT-Data/proactive/robot_pose_circular.npy")[:, :6] # circular
-
-
 	def callback(self, robot_poes_msg, candidate_action_msg, haptic_finger_msg):
-		# self.stop = robot_poes_msg.data[-1]
-		print(self.time_step)
 		if self.stop == 0:
 
 			rot_mat = R.from_matrix([[robot_poes_msg.O_T_EE[0], robot_poes_msg.O_T_EE[4], robot_poes_msg.O_T_EE[8]],\
@@ -162,12 +154,14 @@ class PushingController:
 
 				scaled_robot  = np.zeros_like(self.robot_pose_data[self.time_step-5 : self.time_step, :6]).astype(np.float32)
 
-				############################################################################
+				################################################################
 
 				#scaled_candidate_action = np.zeros_like(self.action_data[self.time_step : self.time_step+10]).astype(np.float32)
-				scaled_candidate_action = np.zeros(10,6).astype(np.float32)
-				candidate_action = candidate_action_msg.data.reshape(10,6).astype(np.float32)
-				print(candidate_action)
+				scaled_candidate_action = np.zeros((10,6)).astype(np.float32)
+				candidate_action_list = candidate_action_msg.data#.reshape(10,6).astype(np.float32)
+				candidate_action_np = np.array(candidate_action_list)
+				candidate_action = candidate_action_np.reshape(10,6)
+				# print(candidate_action)
 				################################################################
 
 
