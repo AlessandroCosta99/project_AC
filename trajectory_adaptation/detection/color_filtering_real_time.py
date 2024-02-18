@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+#Author: ALESSANDRO COSTA 02/24
+
 import cv2
 import numpy as np
 import rospy
