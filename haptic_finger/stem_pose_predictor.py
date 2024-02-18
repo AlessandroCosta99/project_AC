@@ -160,7 +160,7 @@ class PushingController:
 				scaled_candidate_action = np.zeros((10,6)).astype(np.float32)
 				candidate_action_list = candidate_action_msg.data#.reshape(10,6).astype(np.float32)
 				candidate_action_np = np.array(candidate_action_list)
-				candidate_action = candidate_action_np.reshape(10,6)
+				candidate_action = candidate_action_np.reshape(10,6).astype(np.float32)
 				# print(candidate_action)
 				################################################################
 
