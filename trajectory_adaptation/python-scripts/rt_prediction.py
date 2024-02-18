@@ -6,7 +6,6 @@ import rospy
 import joblib
 import numpy as np
 from geometry_msgs.msg import Pose
-from model import SequencePredictor
 from std_msgs.msg import Float64MultiArray
 
 class RobotReader(object):
@@ -15,7 +14,7 @@ class RobotReader(object):
         rospy.init_node('strawberry_prediction')
 
         # Model and scaler
-        self.model = SequencePredictor(4, 50, 20, 2)
+        self.model = rt_model.SequencePredictor(input_size, hidden_size, output_size, num_layers)
         self.model.load_state_dict(torch.load('model.pth', map_location=torch.device('cpu')))
         self.distance_scaler = joblib.load('scaler.pkl')
         self.model.eval()

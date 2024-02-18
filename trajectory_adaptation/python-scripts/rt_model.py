@@ -1,6 +1,12 @@
 import torch
 import torch.nn as nn
 
+# Model parameters
+input_size = 4
+hidden_size = 50
+output_size = 20
+num_layers = 2
+
 class SequencePredictor(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_layers):
         super(SequencePredictor, self).__init__()
