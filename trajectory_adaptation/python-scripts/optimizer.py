@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+#AUTHOR Costa Alessandro 02/24
 import sys
 import math
 import random
@@ -37,7 +38,7 @@ class RobotController():
         self.time_step = 0
         self.prev_time_step = 0
         self.x_f = 0.6
-        self.y_f = -0.21
+        self.y_f = -0.3
         self.num_int_points = 10
         self.trajectory_history = []
         self.cost_history = []
@@ -50,15 +51,13 @@ class RobotController():
         self.optimal_trajectory_history = []
         # self.start_position = np.array([self.x0, self.y0])
         # self.d = np.linalg.norm(self.target_position - self.start_position) / (self.num_int_points+1)
-        self.d = 0.001
+        self.d = 0.005
         self.initial_position =  np.array([0.0,  0.0, 0.0])
         self.optimal_traj_pub = rospy.Publisher('/next_pose', PoseStamped, queue_size=100)
         self.candidate_actions_pub = rospy.Publisher('/candidate_action', Float64MultiArray, queue_size=10)
-
+        self.dist_from_center = 0.0
         self.init_sub()
-        center_hf = 0
         self.loop()
-        #self.plot_trajectory()
 
     def init_sub(self):
         self.stem_pose_sub = rospy.Subscriber('/stem_pose',Float64MultiArray, self.stem_pose_callback)
@@ -100,7 +99,7 @@ class RobotController():
         return cost
        
     def calculate_cost(self, points):
-        return np.sum(np.linalg.norm(points - self.target_position, axis=1)**2) #+ self.dist_from_center**2
+        return np.sum(np.linalg.norm(points - self.target_position, axis=1)**2) + self.dist_from_center**2
 
     def circular_to_cartesian(self,theta_values): 
         x = np.zeros(self.num_int_points+2)
