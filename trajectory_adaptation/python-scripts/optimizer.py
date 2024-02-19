@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-#AUTHOR Costa Alessandro 02/24
+#Author: ALESSANDRO COSTA 02/24
 import sys
 import math
 import random
@@ -25,7 +25,6 @@ from scipy.optimize import BFGS
 from scipy.optimize import LinearConstraint
 from scipy.optimize import NonlinearConstraint
 
-
 ## Pytorch
 import torch
 import torch.onnx
@@ -49,8 +48,6 @@ class RobotController():
         self.points = []
         self.ee_coordinates = []
         self.optimal_trajectory_history = []
-        # self.start_position = np.array([self.x0, self.y0])
-        # self.d = np.linalg.norm(self.target_position - self.start_position) / (self.num_int_points+1)
         self.d = 0.005
         self.initial_position =  np.array([0.0,  0.0, 0.0])
         self.optimal_traj_pub = rospy.Publisher('/next_pose', PoseStamped, queue_size=100)
@@ -62,6 +59,7 @@ class RobotController():
     def init_sub(self):
         self.stem_pose_sub = rospy.Subscriber('/stem_pose',Float64MultiArray, self.stem_pose_callback)
         self.initial_position_sub = rospy.Subscriber("franka_state_controller/franka_states", FrankaState, self.franka_state_callback)
+        self.strawberry_pose_sub = rospy.Subscriber('/predicted_strawberry_positions', Float64MultiArray, self.predicted_strawberry_pose_cb)
 
     def franka_state_callback(self, msg):
         self.robot_pose_init = Float64MultiArray()
@@ -73,6 +71,10 @@ class RobotController():
         self.initial_position = np.array([self.robot_pose_init.data[0], self.robot_pose_init.data[1], self.robot_pose_init.data[2]])
         self.initial_position_sub.unregister()
         self.initial_position_sub = None
+
+    def predicted_strawberry_pose_cb(self, pred):
+        predicted_position = np.array(pred.data).reshape((10, 2))
+
 
     def stem_pose_callback(self, stem_pose):
         center_hf = 0.00
@@ -101,7 +103,21 @@ class RobotController():
     def calculate_cost(self, points):
         return np.sum(np.linalg.norm(points - self.target_position, axis=1)**2) + self.dist_from_center**2
 
-    def circular_to_cartesian(self,theta_values): 
+
+    def line_equation(self, x1, y1, x2, y2):
+        m = (y2 - y1) / (x2 - x1)
+        b = y1 - m * x1
+        return m, b
+
+    def distance_from_point_to_line(self, x, y):     #  here i will pass the predicted position as x and y
+        x1 = self.initial_position[0]
+        y1 = self.initial_position[1]
+        x2 = self.x_f
+        y2 = self.y_f
+        m, b = self.line_equation(x1, y1, x2, y2)
+        return abs(m*x - y - b) / math.sqrt(m**2 +  1)
+    
+    def circular_to_cartesian(self,theta_values):
         x = np.zeros(self.num_int_points+2)
         y = np.zeros(self.num_int_points+2)
         z = np.zeros(self.num_int_points+2)
@@ -156,6 +172,3 @@ if __name__ == '__main__':
     mpc = RobotController()
     mpc.loop()
     rospy.spin()
-
-
-    
