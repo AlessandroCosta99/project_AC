@@ -63,7 +63,7 @@ class RobotController():
 
     def franka_state_callback(self, msg):
         self.robot_pose_init = Float64MultiArray()
-        self.robot_pose_init.data = [0.0] *  3
+        self.robot_pose_init.data = [0.0] * 3
         self.robot_pose_init.data[0] = msg.O_T_EE[12]
         self.robot_pose_init.data[1] = msg.O_T_EE[13]
         self.robot_pose_init.data[2] = msg.O_T_EE[14]
@@ -73,20 +73,13 @@ class RobotController():
         self.initial_position_sub = None
 
     def predicted_strawberry_pose_cb(self, pred):
-        predicted_position = np.array(pred.data).reshape((10, 2))
+        self.predicted_position = np.array(pred.data).reshape((10, 2))
 
 
     def stem_pose_callback(self, stem_pose):
-        center_hf = 0.20  #0.0 
+        center_hf = 0.00
         self.dist_from_center = center_hf - stem_pose.data[0]
         print(self.dist_from_center)
-
-
-    def cost_callback(self, theta_values):    #usefull for tracking the cost value during the optimization
-        points = self.circular_to_cartesian(theta_values)
-        cost = self.calculate_cost(points)
-        self.trajectory_history.append(points.copy())
-        self.cost_history.append(cost)
     
     def gen_opt_traj(self):
         initial_theta = np.zeros(self.num_int_points + 1)
@@ -101,8 +94,7 @@ class RobotController():
         return cost
        
     def calculate_cost(self, points):
-        return np.sum(np.linalg.norm(points - self.target_position, axis=1)**2) + self.dist_from_center**2
-
+        return self.sum_distances_from_matrix(self.predicted_position)**2 + self.dist_from_center**2
 
     def line_equation(self, x1, y1, x2, y2):
         m = (y2 - y1) / (x2 - x1)
@@ -167,7 +159,6 @@ class RobotController():
             self.opt_theta = self.gen_opt_traj()
             self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
             self.pub_next_pose()
-            print(self.optimal_trajectory[0])
             self.stack_constant_actions()
 
             self.initial_position = self.optimal_trajectory[1]

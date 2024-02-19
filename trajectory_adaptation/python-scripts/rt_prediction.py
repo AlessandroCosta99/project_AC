@@ -6,11 +6,14 @@ import rospy
 import joblib
 import numpy as np
 from std_msgs.msg import Float64MultiArray
-from rt_model.rt_model import SequencePredictor
 from franka_msgs.msg import FrankaState
 from geometry_msgs.msg import Point
 import message_filters
 from collections import deque
+
+#import models
+from rt_model.rt_model import SequencePredictor
+
 
 class RobotReader(object):
     def __init__(self):
@@ -21,12 +24,14 @@ class RobotReader(object):
         hidden_size = 50
         output_size = 20
         num_layers = 2
-        model_path = "/home/alessandro/tactile_control_ale_ws/src/trajectory_adaptation/python-scripts"
+        model_path = "/home/alessandro/tactile_control_ale_ws/src/trajectory_adaptation/python-scripts/model3"
         scaler_path = "/home/alessandro/tactile_control_ale_ws/src/trajectory_adaptation/python-scripts/scalers"
         # Model and scaler
         self.model = SequencePredictor(input_size, hidden_size, output_size, num_layers)
         self.model.load_state_dict(torch.load(model_path + '/model.pth', map_location=torch.device('cpu')))
-        self.distance_scaler = joblib.load(scaler_path + '/scaler.pkl')
+        #self.distance_scaler = joblib.load(scaler_path + '/scaler.pkl')
+        self.berry_scaler = joblib.load(scaler_path + '/berry_scaler.pkl')
+        self.robot_scaler = joblib.load(scaler_path + '/robot_scaler.pkl')
         self.model.eval()
 
         # Subscribers
@@ -64,9 +69,11 @@ class RobotReader(object):
             b = np.array(self.strawberry_positions)
             berries = b.reshape((10,2))
             r= np.array(self.robot_ee_pose)
-            robot = b.reshape((10,2))
-            robot_pose_scaled = self.distance_scaler.transform(robot)
-            strawberry_pose_scaled = self.distance_scaler.transform(berries)
+            robot = r.reshape((10,2))
+            # robot_pose_scaled = self.distance_scaler.transform(robot)
+            # strawberry_pose_scaled = self.distance_scaler.transform(berries)
+            robot_pose_scaled = self.robot_scaler.transform(robot)
+            strawberry_pose_scaled = self.berry_scaler.transform(berries)
             combined_data_scaled = np.hstack((robot_pose_scaled, strawberry_pose_scaled))
 
             # Convert to torch tensor
@@ -78,8 +85,9 @@ class RobotReader(object):
 
             # Scale bback
             predicted_positions_np = predicted_positions.squeeze(0).cpu().numpy()
-            predicted_positions_original = self.distance_scaler.inverse_transform(predicted_positions_np)
-            
+            print(predicted_positions_np)
+            predicted_positions_original = self.berry_scaler.inverse_transform(predicted_positions_np)
+            print(predicted_positions_original)
             
             # Publisher
             msg = Float64MultiArray()
