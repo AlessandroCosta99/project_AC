@@ -40,6 +40,8 @@ class RobotController():
         self.y_f = -0.3
         self.num_int_points = 10
         self.trajectory_history = []
+        self.stem_error_history = []
+        self.predicted_strawberry_position_history = []
         self.cost_history = []
         self.stop = False
 
@@ -53,6 +55,8 @@ class RobotController():
         self.optimal_traj_pub = rospy.Publisher('/next_pose', PoseStamped, queue_size=100)
         self.candidate_actions_pub = rospy.Publisher('/candidate_action', Float64MultiArray, queue_size=10)
         self.dist_from_center = 0.0
+        self.save_path = '/home/alessandro/tactile_control_ale_ws/src/data_collection/results_data/001' #<-- update the last folder for every new test
+
         self.init_sub()
         self.loop()
 
@@ -78,7 +82,9 @@ class RobotController():
     def callback(self, stem_pose, berry):
         center_hf = 0.00 #maybe 0.2
         self.dist_from_center = center_hf - stem_pose.data[0]
+        self.stem_error_history.append(self.dist_from_center)
         self.pred_berry_pose = np.array(berry.data).reshape((10, 2))
+        self.predicted_strawberry_position_history.append(self.pred_berry_pose)
 
     def gen_opt_traj(self):
         initial_theta = np.zeros(self.num_int_points + 1)
@@ -93,7 +99,7 @@ class RobotController():
         return cost
        
     def calculate_cost(self): #, points
-        return self.sum_distances_from_matrix(self.pred_berry_pose)**2 + self.dist_from_center**2
+        return self.sum_squared_distances(self.pred_berry_pose) + self.dist_from_center**2
 
     def line_equation(self, x1, y1, x2, y2):
         m = (y2 - y1) / (x2 - x1)
@@ -108,10 +114,10 @@ class RobotController():
         m, b = self.line_equation(x1, y1, x2, y2)
         return abs(m*x - y - b) / math.sqrt(m**2 +  1)
     
-    def sum_distances_from_matrix(self, matrix):
+    def sum_squared_distances(self, matrix):
         sum_of_distances =  0
         for row in matrix:
-            distance = self.distance_from_point_to_line(row[0], row[1])
+            distance = self.distance_from_point_to_line(row[0], row[1])**2
             sum_of_distances += distance
         return sum_of_distances
     
@@ -157,16 +163,24 @@ class RobotController():
         while not rospy.is_shutdown():
             self.opt_theta = self.gen_opt_traj()
             self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
+            self.optimal_trajectory_history.append(self.optimal_trajectory[1])
             self.pub_next_pose()
             self.stack_constant_actions()
 
             self.initial_position = self.optimal_trajectory[1]
             if self.initial_position[0] - self.target_position[0] < 0.005:  #maybe change here
+                #self.target_pose_pub.unregister()  ##check this, may not work or create problem
                 print("Reached target position.")
                 break
 
+    def save_data(self):
+        np.save(self.save_path + "optimal_trajectory.npy", self.optimal_trajectory_history)
+        np.save(self.save_path + "steam_error.npy", self.stem_error_history)
+        np.save(self.save_path + "predicted_position.npy", self.predicted_strawberry_position_history)
+
+
 if __name__ == '__main__':
-    rospy.init_node('optimizer') # , anonymous=True, disable_signals=True)
+    rospy.init_node('optimizer')
     mpc = RobotController()
     mpc.loop()
     rospy.spin()

@@ -6,7 +6,6 @@ import random
 import time
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import scipy
 
 #ROS
@@ -25,12 +24,9 @@ from scipy.optimize import BFGS
 from scipy.optimize import LinearConstraint
 from scipy.optimize import NonlinearConstraint
 
-## Pytorch
-import torch
-import torch.onnx
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
+#Plots
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 class RobotController():
     def __init__(self):
@@ -50,9 +46,11 @@ class RobotController():
         self.optimal_trajectory_history = []
         self.d = 0.005
         self.initial_position =  np.array([0.0,  0.0, 0.0])
-        self.optimal_traj_pub = rospy.Publisher('/next_pose', PoseStamped, queue_size=100)
+        self.target_pose_pub = rospy.Publisher('/target_pose', PoseStamped, queue_size=100)
         self.candidate_actions_pub = rospy.Publisher('/candidate_action', Float64MultiArray, queue_size=10)
         self.dist_from_center = 0.0
+        self.save_path = '/home/alessandro/tactile_control_ale_ws/src/data_collection/results_data/001'   #<-- update the last folder for every new test
+
         self.init_sub()
         self.loop()
 
@@ -120,7 +118,7 @@ class RobotController():
     def sum_distances_from_matrix(self, matrix):
         sum_of_distances =  0
         for row in matrix:
-            distance = self.distance_from_point_to_line(row[0], row[1])
+            distance = self.distance_from_point_to_line(row[0], row[1])**2
             sum_of_distances += distance
         return sum_of_distances
     
@@ -158,7 +156,7 @@ class RobotController():
         pose_msg.pose.position.x =  self.optimal_trajectory[1,0] # Set x coordinate
         pose_msg.pose.position.y =  self.optimal_trajectory[1,1] # Set y coordinate
         pose_msg.pose.position.z =  self.robot_pose_init.data[2]
-        self.optimal_traj_pub.publish(pose_msg)
+        self.target_pose_pub.publish(pose_msg)
 
     def loop(self):
         rate=rospy.Rate(11)    #not sure if it will work
@@ -173,10 +171,14 @@ class RobotController():
             self.initial_position = self.optimal_trajectory[1]
             if self.initial_position[0] - self.target_position[0] < 0.005:  #maybe change here
                 print("Reached target position.")
+                self.target_pose_pub.unregister()  ##check this, may not work or create problem
                 break
+
+    def save_data(self):
+        np.save(self.save_path + "optimal_trajectory.npy", self.optimal_trajectory)
+
 
 if __name__ == '__main__':
     rospy.init_node('optimizer') # , anonymous=True, disable_signals=True)
     mpc = RobotController()
-    mpc.loop()
     rospy.spin()
