@@ -57,9 +57,12 @@ class RobotController():
         self.loop()
 
     def init_sub(self):
-        self.stem_pose_sub = rospy.Subscriber('/stem_pose',Float64MultiArray, self.stem_pose_callback)
         self.initial_position_sub = rospy.Subscriber("franka_state_controller/franka_states", FrankaState, self.franka_state_callback)
-        self.strawberry_pose_sub = rospy.Subscriber('/predicted_strawberry_positions', Float64MultiArray, self.predicted_strawberry_pose_cb)
+        self.stem_pose_sub = message_filters.Subscriber('/stem_pose',Float64MultiArray)
+        self.strawberry_pose_sub = message_filters.Subscriber('/predicted_strawberry_positions', Float64MultiArray)
+        sync_sub = [self.stem_pose_sub, self.strawberry_pose_sub]
+        sync_cb = message_filters.ApproximateTimeSynchronizer(sync_sub,  10, 0.1, allow_headerless=True) 
+        sync_cb.registerCallback(self.callback)
 
     def franka_state_callback(self, msg):
         self.robot_pose_init = Float64MultiArray()
@@ -72,19 +75,15 @@ class RobotController():
         self.initial_position_sub.unregister()
         self.initial_position_sub = None
 
-    def predicted_strawberry_pose_cb(self, pred):
-        self.predicted_position = np.array(pred.data).reshape((10, 2))
-
-
-    def stem_pose_callback(self, stem_pose):
-        center_hf = 0.00
+    def callback(self, stem_pose, berry):
+        center_hf = 0.00 #maybe 0.2
         self.dist_from_center = center_hf - stem_pose.data[0]
-        print(self.dist_from_center)
-    
+        self.pred_berry_pose = np.array(berry.data).reshape((10, 2))
+
     def gen_opt_traj(self):
         initial_theta = np.zeros(self.num_int_points + 1)
         bounds = None
-        result = minimize(self.obj_func, initial_theta, bounds=bounds, callback=self.cost_callback, method='BFGS')#,xrtol = "0.01")
+        result = minimize(self.obj_func, initial_theta, bounds=bounds,method='BFGS')#,xrtol = "0.01")  callback=self.cost_callback, <--removed in this version
         optimal_theta = result.x
         return optimal_theta
 
@@ -93,8 +92,8 @@ class RobotController():
         cost = self.calculate_cost(points)
         return cost
        
-    def calculate_cost(self, points):
-        return self.sum_distances_from_matrix(self.predicted_position)**2 + self.dist_from_center**2
+    def calculate_cost(self): #, points
+        return self.sum_distances_from_matrix(self.pred_berry_pose)**2 + self.dist_from_center**2
 
     def line_equation(self, x1, y1, x2, y2):
         m = (y2 - y1) / (x2 - x1)
@@ -138,7 +137,7 @@ class RobotController():
         candidate_actions_full = np.hstack((optimal_actions, new_columns))
         self.pub_candidate_actions(candidate_actions_full)
 
-    def pub_candidate_actions(self, actions):  #this goes to the stem_pose_predictor
+    def pub_candidate_actions(self, actions):  # this goes to the stem_pose_predictor
         candidate_actions = Float64MultiArray()
         candidate_actions.data = actions.flatten().tolist()
         self.candidate_actions_pub.publish(candidate_actions)
@@ -153,7 +152,7 @@ class RobotController():
         self.optimal_traj_pub.publish(pose_msg)
 
     def loop(self):
-        rate=rospy.Rate(11)    #not sure if it will work
+        rate=rospy.Rate(11)    
 
         while not rospy.is_shutdown():
             self.opt_theta = self.gen_opt_traj()
