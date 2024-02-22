@@ -4,7 +4,7 @@ import torch.nn.functional as F
 class StrawberryPredictor(nn.Module):
     def __init__(self):
         super(StrawberryPredictor, self).__init__()
-        self.fc1 = nn.Linear(6, 64)
+        self.fc1 = nn.Linear(4, 64)
         self.fc2 = nn.Linear(64, 128)
         self.fc3 = nn.Linear(128, 64)
         self.fc4 = nn.Linear(64, 2)
