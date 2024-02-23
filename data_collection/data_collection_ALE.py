@@ -45,13 +45,13 @@ class FrankaRobot(object):
         self.group_names = self.robot.get_group_names()
         self.bridge = CvBridge()
         self.move_group.set_planning_pipeline_id("pilz_industrial_motion_planner") 
-        # self.move_group.set_planner_id("LIN")                      # Set to be the straight line planner
+        self.move_group.set_planner_id("LIN")                      # Set to be the straight line planner
         print(self.move_group.get_interface_description().name)    # Print the planner being used.
 
         # scaling down velocity
         
-        self.move_group.set_max_velocity_scaling_factor(0.5)      
-        self.move_group.set_max_acceleration_scaling_factor(0.5)
+        self.move_group.set_max_velocity_scaling_factor(0.05)      
+        self.move_group.set_max_acceleration_scaling_factor(0.05)
 
         self.pushing_z_height        = 0.15
         self.starting_depth          = 0.30 # was 35
@@ -67,7 +67,7 @@ class FrankaRobot(object):
         self.joint_via_point = [-0.2827285690477829, -0.10776317482340839, 0.25531004340188546, -1.720866153466074, 0.49796132276751903, 3.2227085454915225, 0.20333962609574804]
         # self.joint_push = [0.04607601949356312, 0.17021933704864067, -0.13281828155595027, -1.3124015096343356, -0.019060995645703918, 3.009036840939284, 0.8235806091527144]
         # self.joint_push = [0.04308905999495077, 0.1585832643771773, -0.14940384170854504, -1.3571466245316623, 0.02975108286944235, 3.0149748432071917, 0.7491484249470901]
-        self.joint_push = [0.04446678416070445, 0.1751057482563725, -0.16586388862760443, -1.3552765184408364, 0.0260995250113227, 3.0163658870067884, 0.7461208454668522]
+        self.joint_push = [0.13564276744558473, -0.38750156982267303, -0.19084195070517687, -2.0644975027452435, -0.05338252299781529, 3.290754232088725, 0.7815733720388522]
         self.resets           = 3
         self.pushes_per_reset = 3
 

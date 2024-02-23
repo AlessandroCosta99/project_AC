@@ -39,8 +39,8 @@ class FrankaRobot(object):
         print(self.move_group.get_interface_description().name)    # Print the planner being used.
 
         # scaling down velocity
-        self.move_group.set_max_velocity_scaling_factor(0.1)      
-        self.move_group.set_max_acceleration_scaling_factor(0.1)
+        self.move_group.set_max_velocity_scaling_factor(0.09)      
+        self.move_group.set_max_acceleration_scaling_factor(0.06)
 
         self.joint_names = ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4", "panda_joint5", "panda_joint6", "panda_joint7"] 
         self.joint_home = [0.18984723979820606, -0.977749801850428, -0.22761550468348588, -2.526835711730154, -0.20211957115956533, 3.1466847225824988, 0.7832720796780586]
@@ -51,7 +51,7 @@ class FrankaRobot(object):
 
         #DATA SAVING:
         # Initialize the variable
-        self.datasave_folder = "/home/alessandro/Dataset/new_dataset"
+        self.datasave_folder = "/home/alessandro/Dataset/new_dataset_times"
 
         self.robot_joint_sub = message_filters.Subscriber('/joint_states', JointState)
         self.robot_sub       = message_filters.Subscriber('/franka_state_controller/franka_states', FrankaState)
@@ -76,8 +76,8 @@ class FrankaRobot(object):
                 self.move_group.set_planner_id("LIN")
 
                 target_pose = self.move_group.get_current_pose().pose
-                target_pose.position.x = random.uniform(0.3,0.6)
-                target_pose.position.y = random.uniform(-0.28,-0.15)
+                target_pose.position.x = random.uniform(0.45,0.55)
+                target_pose.position.y = random.uniform(-0.25,-0.15)
                 #target_pose.position.z = 0
                 # target_pose.orientation.x = -0.6346264749672597
                 # target_pose.orientation.y =  0.2821901217833465
@@ -157,6 +157,7 @@ class FrankaRobot(object):
         T0 = pd.DataFrame(self.robot_states_formated)
         T1 = pd.DataFrame(self.centroids)
         T2 = pd.DataFrame(self.franka_states)
+        T3 = pd.DataFrame(self.times)
         print(T0)
         robot_states_col = ["position_panda_joint1", "position_panda_joint2", "position_panda_joint3", "position_panda_joint4", "position_panda_joint5", "position_panda_joint6", "position_panda_joint7", "position_panda_finger_joint1", "position_panda_finger_joint2",
         "velocity_panda_joint1", "velocity_panda_joint2", "velocity_panda_joint3", "velocity_panda_joint4", "velocity_panda_joint5", "velocity_panda_joint6", "velocity_panda_joint7", "velocity_panda_finger_joint1", "velocity_panda_finger_joint2",
@@ -168,6 +169,7 @@ class FrankaRobot(object):
         T0.to_csv(folder + '/robot_state.csv', header=robot_states_col, index=False)
         T1.to_csv(folder + '/strawberry_position.csv', header=["berry_x", "berry_y"], index=False)
         T2.to_csv(folder + '/franka_states.csv', header=franka_states_col, index=False)
+        T3.to_csv(folder + '/times.csv', header=["t"], index=False)
 
 
     def go_home(self):

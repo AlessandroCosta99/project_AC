@@ -12,7 +12,7 @@ def find_csv_with_small_value(root_dir):
                 file_path = os.path.join(dirpath, filename)
                 try:
                     df = pd.read_csv(file_path)
-                    if df.iloc[:,  1].min() <  70:
+                    if df.iloc[:,  1].min() > 300 :
                         print(f"Found CSV file with value smaller than  50 in the first column: {file_path}")
                         return True
                 except Exception as e:
