@@ -29,7 +29,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 #models
-#from ACTP.ACTP_model import ACTP
+
 
 
 class RobotController():
@@ -52,25 +52,11 @@ class RobotController():
         self.d = np.linalg.norm(self.target_position - self.initial_position) / (self.num_int_points+1)
         self.points = []
 
-        #rospy.init_node('listener', anonymous=True, disable_signals=True)
-
-        self.init_sub()
-        # self.control_loop()
         self.compute_trajectory()
         self.opt_theta = self.gen_opt_traj()
-        self.optimized_trajectory = self.circular_to_cartesian(self.opt_theta) 
+        self.optimized_trajectory = self.circular_to_cartesian(self.opt_theta)
         self.plot_trajectory()
         print(self.optimal_trajectory[1])
-
-        
-    def init_sub(self):
-        rospy.init_node('optimizer', anonymous=True, disable_signals=True)
-        self.optimal_traj_pub = rospy.Publisher('/optimal_traj', Float64MultiArray, queue_size=11)
-        # robot_data = message_filters.Subscriber('/robot_state',Float64MultiArray, queue_size = 11)
-        # self.robot_subscriber = [robot_data]
-        # ts_sync = message_filters.ApproximateTimeSynchronizer(self.robot_subscriber, queue_size=1, slop=0.1, allow_headerless=True)
-        # ts_sync.registerCallback(self.sub_cb)
-
 
     def cost_callback(self, theta_values):    #usefull for tracking the cost value during the optimization
         points = self.circular_to_cartesian(theta_values)
@@ -79,13 +65,12 @@ class RobotController():
         self.cost_history.append(cost)
     
     def gen_opt_traj(self):
-        # Initial guess for theta values
+        #Initial guess for theta values
         #initial_guess = np.random.uniform(0, 2*np.pi, self.num_points - 1)
         initial_theta = np.zeros(self.num_int_points + 1)
         # Bounds for the theta values (individual bounds for each element)
-        bounds = None
         # Run the optimization with the callback function
-        result = minimize(self.obj_func, initial_theta, bounds=bounds, callback=self.cost_callback, method='BFGS')
+        result = minimize(self.obj_func, initial_theta, callback=self.cost_callback, method='BFGS')
         # Extract the optimized theta values
         optimal_theta = result.x
         return optimal_theta
@@ -96,7 +81,12 @@ class RobotController():
         return cost
        
     def calculate_cost(self, points, target_position):
-        return np.sum(np.linalg.norm(points - target_position, axis=1)**2)
+        norms = []
+        for p1, p2 in zip(points, target_position):
+            norm = np.linalg.norm(p1 - p2)**2
+            norms.append(norm)
+        return np.sum(norms)
+        #return np.sum(np.linalg.norm(points - target_position, axis=1)**2)
 
     def circular_to_cartesian(self,theta_values):
         x = np.zeros(self.num_int_points+2)
@@ -113,11 +103,9 @@ class RobotController():
 
     def compute_trajectory(self):
         self.opt_theta = self.gen_opt_traj()
+        print(self.opt_theta)
         self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta) 
 
-        traj_msg = Float64MultiArray()
-        traj_msg.data = self.optimal_trajectory[1]
-        self.optimal_traj_pub.publish(traj_msg)
 
     def control_loop(self):
 
@@ -142,8 +130,8 @@ class RobotController():
 
     def plot_trajectory(self):
         # Plot the trajectory at each step
-        #for i, trajectory in enumerate(self.trajectory_history):
-        #   plt.plot(trajectory[:, 0], trajectory[:, 1], label=f'Step {i}')
+        for i, trajectory in enumerate(self.trajectory_history):
+           plt.plot(trajectory[:, 0], trajectory[:, 1], label=f'Step {i}')
 
         # Plot the final optimized trajectory
         plt.scatter(self.optimized_trajectory[:, 0], self.optimized_trajectory[:, 1], label='Optimized', color='red', marker='x')
@@ -160,4 +148,3 @@ class RobotController():
 
 if __name__ == '__main__':
     io = RobotController()
-    #io.animate_optimization()
