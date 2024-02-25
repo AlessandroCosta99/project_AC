@@ -133,16 +133,18 @@ class RobotController():
 
         return np.column_stack((x, y))    #np.array of shape (n+1,2)
     
-    def stack_constant_actions(self):
-        optimal_actions = self.optimal_trajectory[1:11,:]
-        constant_values = np.array([[0.7], [0.726858], [0.0265717,], [0.686072]]) #check this
-        new_columns = np.column_stack([constant_values[i] * np.ones((optimal_actions.shape[0],  1)) for i in range(4)])
-        candidate_actions_full = np.hstack((optimal_actions, new_columns))
-        self.pub_candidate_actions(candidate_actions_full)
+    # def stack_constant_actions(self):
+    #     optimal_actions = self.optimal_trajectory[1:11,:]
+    #     constant_values = np.array([[0.7], [0.726858], [0.0265717,], [0.686072]]) #check this
+    #     new_columns = np.column_stack([constant_values[i] * np.ones((optimal_actions.shape[0],  1)) for i in range(4)])
+    #     candidate_actions_full = np.hstack((optimal_actions, new_columns))
+    #     self.pub_candidate_actions(candidate_actions_full)
 
     def pub_candidate_actions(self, actions):  # this goes to the stem_pose_predictor
+        self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
         candidate_actions = Float64MultiArray()
-        candidate_actions.data = actions.flatten().tolist()
+        velocity = self.optimal_trajectory[1,:]-self.optimal_trajectory[0,:]
+        candidate_actions.data = velocity  #approximated
         self.candidate_actions_pub.publish(candidate_actions)
     
     def pub_next_pose(self):  #this goes to the robot
@@ -161,10 +163,10 @@ class RobotController():
 
             try:
                 self.opt_theta = self.gen_opt_traj()
-                self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
-                self.optimal_trajectory_history.append(self.optimal_trajectory[1])
+                # self.optimal_trajectory_history.append(self.optimal_trajectory[1])
                 self.pub_next_pose()
-                self.stack_constant_actions()
+                self.pub_candidate_actions()
+                # self.stack_constant_actions()
 
                 self.initial_position = self.optimal_trajectory[1]
                 
@@ -185,3 +187,4 @@ class RobotController():
 
 if __name__ == '__main__':
     mpc = RobotController()
+    #mpc.save_data()

@@ -15,7 +15,7 @@ import message_filters
 #Models
 from rt_model.rt_model import SequencePredictor
 
-#input: b_t, x_t, x_t-1, v_t, v_t-1
+#input: b_t, x_t, x_t-1, v_t.
 #output: b_t+1
 
 class RobotReader(object):
@@ -34,8 +34,8 @@ class RobotReader(object):
         self.berry_position      = np.zeros((500,2)).astype(np.float32)
         self.robot_ee_pose       = np.zeros((500,2)).astype(np.float32)
         self.robot_action        = np.zeros((self.pred_horizon,2)).astype(np.float32)
-        self.action_concat		 = np.zeros((500, x, y)).astype(np.float32)   ##!!!!!!!CHECK DIMENSION-according to scalers
-
+        self.action_concat		 = np.zeros((500, 2, 6)).astype(np.float32)   ##!!!!!!!CHECK 
+        
         #activate methods
         self.init_sub()
         self.load_model()
@@ -44,7 +44,7 @@ class RobotReader(object):
 
     def init_sub(self):
         self.sub_strawberry = message_filters.Subscriber("/strawberry_position", Point)
-        self.sub_robot_ee = message_filters.Subscriber("/franka_state_controller/franka_states", FrankaState)#, self.franka_state_callback)
+        self.sub_robot_ee = message_filters.Subscriber("/franka_state_controller/franka_states", FrankaState)
         self.robot_action_sub = message_filters.Subscriber('/candidate_action', Float64MultiArray)
         sync_sub = [self.sub_strawberry, self.sub_robot_ee, self.robot_action_sub]
         sync_cb = message_filters.ApproximateTimeSynchronizer(sync_sub,  10, 0.1, allow_headerless=True) 
@@ -108,8 +108,8 @@ class RobotReader(object):
         berry_pred_msg.data = [berry_pred_pos_original]
     def save_data(self):
         np.save(self.save_path + "action.npy", self.robot_action[:self.time_step-1])
-        np.save(self.save_path + "robot_pose.npy", self.robot_pose_data[:self.time_step-1]) # columns: x, y, z, eu_x, eu_y, eu_z, quat_x, quat_y, quat_z, _quat_w
-        np.save(self.save_path + "action_scaled.npy", self.action_data_scaled[:self.time_step-1])
+        np.save(self.save_path + "robot_pose.npy", self.robot_ee_pose[:self.time_step-1]) # columns: x, y, z, eu_x, eu_y, eu_z, quat_x, quat_y, quat_z, _quat_w
+        np.save(self.save_path + "action_scaled.npy", self.action_concat[:self.time_step-1])
         np.save(self.save_path + "robot_data_scaled.npy", self.robot_data_scaled[:self.time_step-1])
 	
 
