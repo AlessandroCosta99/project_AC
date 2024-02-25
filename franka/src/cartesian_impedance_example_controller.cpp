@@ -132,7 +132,7 @@ void CartesianImpedanceExampleController::starting(const ros::Time& /*time*/) {
   q_d_nullspace_ = q_initial;
 }
 
-void CartesianImpedanceExampleController::update(const ros::Time& /*time*/,
+void CartesianImpedanceExampleController::update(const ros::Time& time,
                                                  const ros::Duration& period) {
   // get state variables
   franka::RobotState robot_state = state_handle_->getRobotState();

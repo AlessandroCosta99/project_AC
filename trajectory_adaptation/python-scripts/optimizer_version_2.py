@@ -33,26 +33,27 @@ import torch.nn.functional as F
 
 class RobotController():
     def __init__(self):
+        rospy.init_node('optimizer')
         self.time_step = 0
         self.prev_time_step = 0
+
+        #Varuables initialization
+        self.dist_from_center = 0.0
         self.x_f = 400 #image frame
         self.y_f = 180 #image frame
-        self.num_int_points = 10
+        self.pred_horizon = 1    #<----------- change here
         self.trajectory_history = []
         self.stem_error_history = []
         self.predicted_strawberry_position_history = []
-        self.cost_history = []
-        self.stop = False
-
-        self.goal_pose = PoseStamped()
         self.target_position = np.array([self.x_f, self.y_f])
         self.points = []
-        self.ee_coordinates = []
         self.optimal_trajectory_history = []
         self.d = 0.005
-        self.initial_position =  np.array([0.0,  0.0, 0.0])
-        self.optimal_traj_pub = rospy.Publisher('/next_pose', PoseStamped, queue_size=100)
-        self.candidate_actions_pub = rospy.Publisher('/candidate_action', Float64MultiArray, queue_size=10)
+        self.initial_robot_position =  np.array([0.0,  0.0, 0.0])
+
+        #Publishers
+        self.optimal_traj_pub = rospy.Publisher('/next_pose', PoseStamped, queue_size=100)   #for the robot ( i need this type of data)
+        self.candidate_actions_pub = rospy.Publisher('/candidate_action', Float64MultiArray, queue_size=10)   #for the predictors
         self.dist_from_center = 0.0
         self.save_path = '/home/alessandro/tactile_control_ale_ws/src/data_collection/results_data/001' #<-- update the last folder for every new test
 
@@ -67,39 +68,36 @@ class RobotController():
         sync_cb = message_filters.ApproximateTimeSynchronizer(sync_sub,  10, 0.1, allow_headerless=True) 
         sync_cb.registerCallback(self.callback)
 
-    # def franka_state_callback(self, msg):
-    #     self.robot_pose_init = Float64MultiArray()
-    #     self.robot_pose_init.data = [0.0] * 3
-    #     self.robot_pose_init.data[0] = msg.O_T_EE[12]
-    #     self.robot_pose_init.data[1] = msg.O_T_EE[13]
-    #     self.robot_pose_init.data[2] = msg.O_T_EE[14]
-    #     #update initial position with the data received
-    #     self.initial_position = np.array([self.robot_pose_init.data[0], self.robot_pose_init.data[1], self.robot_pose_init.data[2]])
-    #     self.initial_position_sub.unregister()
-    #     self.initial_position_sub = None
+    def franka_state_callback(self, msg):
+        self.robot_pose_init = Float64MultiArray()
+        self.robot_pose_init.data = [0.0] * 3
+        self.robot_pose_init.data[0] = msg.O_T_EE[12]
+        self.robot_pose_init.data[1] = msg.O_T_EE[13]
+        self.robot_pose_init.data[2] = msg.O_T_EE[14]
+        #update initial position with the data received
+        self.initial_position = np.array([self.robot_pose_init.data[0], self.robot_pose_init.data[1], self.robot_pose_init.data[2]])
+        self.initial_position_sub.unregister()
+        self.initial_position_sub = None
 
-    def callback(self, stem_pose, berry):
+    def callback(self, stem_pose_msg, berry_pred_msg):
         center_hf = 0.00 #maybe 0.2
-        self.dist_from_center = center_hf - stem_pose.data[0]
+        self.dist_from_center = center_hf - stem_pose_msg.data[0]
         self.stem_error_history.append(self.dist_from_center)
-        self.pred_berry_pose = np.array(berry.data).reshape((1, 2))
+        self.pred_berry_pose = np.array(berry_pred_msg.data).reshape((1, 2))
         #self.predicted_strawberry_position_history.append(self.pred_berry_pose)
 
     def gen_opt_traj(self):
-        initial_theta = np.zeros(self.num_int_points + 1)
+        initial_theta = np.zeros(self.pred_horizon)
         bounds = None
-        result = minimize(self.obj_func, initial_theta, bounds=bounds,method='BFGS')#,xrtol = "0.01")  callback=self.cost_callback, <--removed in this version
+        result = minimize(self.obj_func, initial_theta, bounds=bounds,method='BFGS')
         optimal_theta = result.x
         return optimal_theta
 
-    def obj_func(self, theta_values):
-        points = self.circular_to_cartesian(theta_values)
-        cost = self.calculate_cost(points)
-        return cost
-       
-    def calculate_cost(self): #, points
-        #return self.sum_squared_distances(self.pred_berry_pose) + self.dist_from_center**2
+    def obj_func(self):
         return np.linalg.norm(self.target_position-self.pred_berry_pose)**2 + self.dist_from_center**2
+        #target_position is in image frame ----------------------------- distance between stem localization and center of the finger
+        
+
     def line_equation(self, x1, y1, x2, y2):
         m = (y2 - y1) / (x2 - x1)
         b = y1 - m * x1
@@ -121,19 +119,19 @@ class RobotController():
         return sum_of_distances
     
     def circular_to_cartesian(self,theta_values):
-        x = np.zeros(self.num_int_points+2)
-        y = np.zeros(self.num_int_points+2)
-        z = np.zeros(self.num_int_points+2)
-        for i in range(self.num_int_points+2):
+        x = np.zeros(self.pred_horizon+1)
+        y = np.zeros(self.pred_horizon+1)
+        z = np.zeros(self.pred_horizon+1)
+        for i in range(self.pred_horizon+1):
             if i == 0:
-                x[i] = self.initial_position[0]
-                y[i] = self.initial_position[1]
+                x[i] = self.initial_robot_position[0]
+                y[i] = self.initial_robot_position[1]
 
             else:
                 x[i] = x[i-1] + self.d * np.cos(theta_values[i-1])
                 y[i] = y[i-1] + self.d * np.sin(theta_values[i-1])
 
-        return np.column_stack((x, y))
+        return np.column_stack((x, y))    #np.array of shape (n+1,2)
     
     def stack_constant_actions(self):
         optimal_actions = self.optimal_trajectory[1:11,:]
@@ -157,19 +155,26 @@ class RobotController():
         self.optimal_traj_pub.publish(pose_msg)
 
     def loop(self):
-        rate=rospy.Rate(11)    
+        rate=rospy.Rate(50)    
 
         while not rospy.is_shutdown():
-            self.opt_theta = self.gen_opt_traj()
-            self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
-            self.optimal_trajectory_history.append(self.optimal_trajectory[1])
-            self.pub_next_pose()
-            self.stack_constant_actions()
 
-            self.initial_position = self.optimal_trajectory[1]
-            if self.initial_position[0] - self.target_position[0] < 0.005:  #maybe change here
-                #self.target_pose_pub.unregister()  ##check this, may not work or create problem
-                print("Reached target position.")
+            try:
+                self.opt_theta = self.gen_opt_traj()
+                self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
+                self.optimal_trajectory_history.append(self.optimal_trajectory[1])
+                self.pub_next_pose()
+                self.stack_constant_actions()
+
+                self.initial_position = self.optimal_trajectory[1]
+                
+                if self.pred_berry_pose[0] - self.target_position[0] < 1.0:  #maybe change here
+                    #self.target_pose_pub.unregister()  ##check this, may not work or create problem
+                    print("Reached target position.")
+                    break
+                rate.sleep()
+
+            except KeyboardInterrupt:
                 break
 
     def save_data(self):
@@ -179,6 +184,4 @@ class RobotController():
 
 
 if __name__ == '__main__':
-    rospy.init_node('optimizer')
     mpc = RobotController()
-    rospy.spin()
