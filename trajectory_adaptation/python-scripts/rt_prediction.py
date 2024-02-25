@@ -13,7 +13,7 @@ import message_filters
 
 
 #Models
-from rt_model.rt_model import SequencePredictor
+from model_ann import StrawberryPredictor
 
 #input: b_t, x_t, x_t-1, v_t.
 #output: b_t+1
@@ -33,13 +33,13 @@ class RobotReader(object):
         # Placeholders for received data
         self.berry_position      = np.zeros((500,2)).astype(np.float32)
         self.robot_ee_pose       = np.zeros((500,2)).astype(np.float32)
-        self.robot_action        = np.zeros((self.pred_horizon,2)).astype(np.float32)
+        self.robot_action        = np.zeros((500,2)).astype(np.float32)
         self.action_concat		 = np.zeros((500, 2, 6)).astype(np.float32)   ##!!!!!!!CHECK 
         
         #activate methods
-        self.init_sub()
         self.load_model()
         self.load_scalers()
+        self.init_sub()
         self.control_loop()
 
     def init_sub(self):
@@ -51,45 +51,47 @@ class RobotReader(object):
         sync_cb.registerCallback(self.callback)
 
     def load_model(self):
-        model_path = "/home/alessandro/tactile_control_ale_ws/src/trajectory_adaptation/python-scripts/..."
-        self.model = SequencePredictor()
-        self.model.load_state_dict(torch.load(model_path + '/model.pth', map_location=self.device))
+        model_path = "/home/alessandro/tactile_control_ale_ws/src/trajectory_adaptation/python-scripts/one_prediction_model"
+        self.model = StrawberryPredictor()
+        self.model.load_state_dict(torch.load(model_path + '/model_ann.pth', map_location=self.device))
         self.model.eval()
+        print("model loaded")
 
     def load_scalers(self):
         scaler_path = "/home/alessandro/tactile_control_ale_ws/src/trajectory_adaptation/python-scripts/scalers"
-        self.berry_scaler = joblib.load(scaler_path + '/berry_scaler.pkl')
-        self.robot_scaler = joblib.load(scaler_path + '/robot_scaler.pkl')
-        #self.action_scaler = joblib.load(scaler_path + '/action_scaler.pkl)
+        self.input_scaler = joblib.load(scaler_path + '/inputs_scalers.pkl')
+        self.output_scaler = joblib.load(scaler_path + '/pred_berry_scalers.pkl')
+        print("Scalers loaded")
 
     def callback(self, berry_pose_msg, robot_pose_msg, robot_action_msg):
-        self.robot_ee_pose[self.time_step] = np.array([robot_pose_msg.data[13], robot_pose_msg.data[14]])
+        self.robot_ee_pose[self.time_step] = np.array([robot_pose_msg.O_T_EE[13], robot_pose_msg.O_T_EE[14]])
         self.berry_position[self.time_step] = np.array([berry_pose_msg.x, berry_pose_msg.y])
-        self.robot_action = robot_action_msg.data
+        self.robot_action[self.time_step] = np.array([robot_action_msg.data[0],robot_action_msg.data[1]])
+        print("t= ",self.time_step)
 
-        if self.time_step > self.pred_horizon: #if not we don't have enough history data to feed the model with  
+        if self.time_step >= self.pred_horizon: #if not we don't have enough history data to feed the model with  
             #-Scaling
-            scaled_robot = np.zeros_like(self.robot_ee_pose[self.time_step-self.pred_horizon:self.time_step, :]).astype(np.float32)  #prediction horizon = 1 in this case
+            #scaled_robot = np.zeros_like(self.robot_ee_pose[self.time_step-self.pred_horizon:self.time_step, :]).astype(np.float32)  #prediction horizon = 1 in this case
             #the robot actions came from the mpc (optimizer) so the first i recive already represent the cadidate self.prediction_horizion evolution of robot state
-            scaled_action = np.zeros_like(self.robot_action[self.time_step]).astype(np.float32)
-
-            scaled_robot = self.robot_scaler.transform(self.robot_ee_pose[self.time_step])
-            scaled_action = self.robot_scaler.transform(self.robot_action)
+            #scaled_action = np.zeros_like(self.robot_action[self.time_step]).astype(np.float32)
+            #scaled_robot = self.robot_scaler.transform(self.robot_ee_pose[self.time_step])
+            #scaled_action = self.robot_scaler.transform(self.robot_action)
             #Concatenate, past data, present data and future data (action)
-            scaled_action_r = np.concatenate((scaled_robot, scaled_action), axis=0).astype(np.float32)
-            self.action_concat[self.time_step] = scaled_action_r
-            
-            strawberry_pose_scaled = np.zeros_like(self.berry_position[self.time_step])  #input only b_t
-            strawberry_pose_scaled = self.berry_scaler.transform(self.berry_position)
-            
-            self.scaled_action = torch.from_numpy(self.action_concat[self.time_step]).unsqueeze(1)  #unsqueeze is like transpose a vector into a column
-            self.scaled_berry = torch.from_numpy(strawberry_pose_scaled).unsqueeze(1)
+            #scaled_action_r = np.concatenate((scaled_robot, scaled_action), axis=0).astype(np.float32)
+            #self.action_concat[self.time_step] = scaled_action_r
+            #scaled_strawberry_pose = np.zeros_like(self.berry_position[self.time_step])  #input only b_t
+            #scaled_strawberry_pose = self.berry_scaler.transform(self.berry_position)
+
+            input_stacked = np.hstack((self.robot_ee_pose[self.time_step-1],self.robot_ee_pose[self.time_step], self.robot_action[self.time_step], self.berry_position[self.time_step])).reshape((1,8))
+            scaled_input = self.input_scaler.transform(input_stacked)
+            self.scaled_input = torch.from_numpy(scaled_input) #unsqueeze is like transpose a vector into a column
+            # print(self.scaled_input)
 
         self.time_step +=1
 
     def position_prediction(self):
         with torch.no_grad():
-            predicted_positions = self.model(self.scaled_action, self.scaled_berry)
+            predicted_positions = self.model(self.scaled_input)
         return predicted_positions
 
 
@@ -98,14 +100,19 @@ class RobotReader(object):
         berry_pred_pos = self.position_prediction()
 
         # Scale Back if needed
-        berry_pred_pos_np = berry_pred_pos.squeeze(0).cpu().numpy()
+        berry_pred_pos_np = berry_pred_pos.reshape((1,2))
         #print(predicted_positions_np)
-        berry_pred_pos_original = self.berry_scaler.inverse_transform(berry_pred_pos_np)
-        #print(predicted_positions_original)
+        berry_pred_pos_original = self.output_scaler.inverse_transform(berry_pred_pos_np).reshape(2,)
+        print(berry_pred_pos_original)
 
-        berry_pred_msg = Float64MultiArray()
+        berry_pred_msg = Float64MultiArray(data=berry_pred_pos_original)
 
-        berry_pred_msg.data = [berry_pred_pos_original]
+        # berry_x_pred_msg = berry_pred_pos_original[0]
+        # berry_y_pred_msg = berry_pred_pos_original[1]
+
+
+        self.pub_predicted_positions.publish(berry_pred_msg) #berry_x_pred_msg, berry_y_pred_msg
+
     def save_data(self):
         np.save(self.save_path + "action.npy", self.robot_action[:self.time_step-1])
         np.save(self.save_path + "robot_pose.npy", self.robot_ee_pose[:self.time_step-1]) # columns: x, y, z, eu_x, eu_y, eu_z, quat_x, quat_y, quat_z, _quat_w
