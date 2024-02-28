@@ -1,0 +1,28 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/alessandro/tactile_control_ale_ws/devel/include/**",
+        "/opt/ros/noetic/include/**",
+        "/home/alessandro/tactile_control_ale_ws/src/data_collection/include/**",
+        "/home/alessandro/tactile_control_ale_ws/src/franka_ros/franka_control/include/**",
+        "/home/alessandro/tactile_control_ale_ws/src/franka_ros/franka_example_controllers/include/**",
+        "/home/alessandro/tactile_control_ale_ws/src/franka_ros/franka_gazebo/include/**",
+        "/home/alessandro/tactile_control_ale_ws/src/franka_ros/franka_gripper/include/**",
+        "/home/alessandro/tactile_control_ale_ws/src/franka_ros/franka_hw/include/**",
+        "/home/alessandro/tactile_control_ale_ws/src/optimizer/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

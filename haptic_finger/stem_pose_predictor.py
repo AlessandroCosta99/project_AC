@@ -224,7 +224,7 @@ class PushingController:
 		
 		self.rot_publisher.publish(step_pose_msg)
 
-		self.localisation[self.time_step] = stem_pose
+
 
 	def save_data(self):
 		np.save(self.save_path + "action.npy", self.action_data[:self.time_step-1])
