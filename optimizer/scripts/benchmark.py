@@ -10,6 +10,7 @@ from pickle import load
 import PIL.Image as PILImage
 from cv_bridge import CvBridge
 import torch.nn.functional as F
+from openvino.runtime import Core
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray
 from franka_msgs.msg import FrankaState
@@ -76,14 +77,9 @@ class PushingController:
 
 		self.load_model()
 		self.load_scalers()
-		self.init_sub()
+		self.input_definition()
+		self.get_stem_position()
 
-	def init_sub(self):
-		robot_sub = message_filters.Subscriber('/cartesian_impedance_example_controller/panda_robot_state_topic', Float64MultiArray) # original
-		haptic_finger_sub = message_filters.Subscriber("/fing_camera/color/image_raw", Image)
-		self.sync_sub = [robot_sub, haptic_finger_sub]
-		sync_cb = message_filters.ApproximateTimeSynchronizer(self.sync_sub, 1, 0.1, allow_headerless=True)
-		sync_cb.registerCallback(self.callback)
 
 	def load_model(self):
 		n_past = 5
@@ -123,89 +119,90 @@ class PushingController:
 		self.robot_min_max_scalar = [load(open(scaler_path + '/robot_min_max_scalar_'+feature +'.pkl', 'rb'))\
 															 for feature in ['px', 'py', 'pz', 'ex', 'ey', 'ez']]
 		print("Scalers loaded")
-	
-	def callback(self, robot_poes_msg, haptic_finger_msg):
-		# self.stop = robot_poes_msg.data[-1]
-		print(self.time_step)
-		if self.stop == 0:
 
-			rot_mat = R.from_matrix([[robot_poes_msg.data[0], robot_poes_msg.data[4], robot_poes_msg.data[8]],\
-									[robot_poes_msg.data[1], robot_poes_msg.data[5], robot_poes_msg.data[9]],\
-									[robot_poes_msg.data[2], robot_poes_msg.data[6], robot_poes_msg.data[10]]])												
-			
-			euler = rot_mat.as_euler('zyx', degrees=True)
-			quat  = rot_mat.as_quat()
+	def input_definition(self):
+		scaled_robot  = np.zeros((5,6)).astype(np.float32)
 
-			self.robot_pose_data[self.time_step] = np.array([robot_poes_msg.data[12], robot_poes_msg.data[13], robot_poes_msg.data[14],\
-														euler[0], euler[1], euler[2],\
-														quat[0], quat[1], quat[2], quat[3]])
-
-
-			haptic_finger_img = self.bridge.imgmsg_to_cv2(haptic_finger_msg, desired_encoding='passthrough')
-			haptic_finger_img = cv2.rectangle(haptic_finger_img,(0,230),(480,480),(0,0,0),-1)
-			self.haptic_finger_data_raw[self.time_step] = haptic_finger_img
-			haptic_finger_img = PILImage.fromarray(haptic_finger_img).resize((64, 64), PILImage.LANCZOS)
-			haptic_finger_img = np.array(haptic_finger_img).astype(np.uint8)
-			haptic_finger_img = haptic_finger_img.astype(np.float32)
-
-			haptic_finger_img = haptic_finger_img / 255.0
-			self.haptic_finger_scaled[self.time_step] = haptic_finger_img[np.newaxis, :, : , :]
-			if self.time_step > 6:
-				if self.service == None:
-					self.service = rospy.Service("predictor", pred, self.create_input_for_model)
-					
-					print("t = {} --> Ready to receive actions from client. server = {}".format(self.time_step, self.service))
-		self.time_step +=1
-
-	def create_input_for_model(self, req):
+		self.robot_pose_data = [[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+						  [5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+						  [5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+						  [5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+						  [5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01]]
 		
-		print("Received data from client:")
-		self.t_start = time.perf_counter()
-		scaled_robot  = np.zeros_like(self.robot_pose_data[self.time_step-5 : self.time_step, :6]).astype(np.float32)
-		candidate_action_list = req.candidate_action.data
-		print(candidate_action_list)
-		candidate_action_np = np.array(candidate_action_list)
-		candidate_action_r = candidate_action_np.reshape(10,6).astype(np.float32)
+		candidate_action_r = [[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01],\
+					[5.67292809e-01, -6.73021811e-02,  7.80954368e-01,  1.14387605e+02, 8.41317639e+01,  6.51638829e+01]]
+		
+		image_npy = np.load('/home/alessandro/Dataset/localization/Pushing_Single_Strawberry_valid/data_sample_2023-11-30-17-51-02/camera_finger.npy')#,allow_pickle=True).item()
+
+		for i in range(6):
+
+			tactile_image = image_npy
+			# tactile_image[170:] = 0
+			# tactile_image[150:170, 100:150] = 0
+			# # tactile_image = tactile_image / 255.0
+
+			tactile_image = tactile_image[:170] # this is for cropped image (sensor base part is deleted instead of blacking)
+
+			# this is for 64x64 input image resolution
+			tactile_image = PILImage.fromarray(tactile_image).resize((64, 64), PILImage.LANCZOS)
+			tactile_image = np.array(tactile_image)
+			tactile_image = tactile_image / 255.0
+    
+
+			#haptic_finger_img = self.bridge.imgmsg_to_cv2(image, desired_encoding='passthrough')
+			#cv2.imwrite(self.save_path + "/image/" + str(self.time_step) + ".png", haptic_finger_img)
+			# haptic_finger_img = cv2.rectangle(image_npy,(0,230),(480,480),(0,0,0),-1)
+			# self.haptic_finger_data_raw = haptic_finger_img
+			# haptic_finger_img = PILImage.fromarray(haptic_finger_img).resize((64, 64), PILImage.LANCZOS)
+			# haptic_finger_img = np.array(haptic_finger_img).astype(np.uint8)
+			# haptic_finger_img = haptic_finger_img.astype(np.float32)
+
+			# haptic_finger_img = haptic_finger_img / 255.0
+			# self.haptic_finger_scaled[self.i] = haptic_finger_img[np.newaxis, :, : , :]		  
+
+		# candidate_action_list = req.candidate_action.data
+		# candidate_action_np = np.array(candidate_action_list)
+		# candidate_action_r = candidate_action_np.reshape(10,6).astype(np.float32)
 
 		for index, min_max_scalar in enumerate(self.robot_min_max_scalar):
-			scaled_robot[:, index] = np.squeeze(min_max_scalar.transform(self.robot_pose_data[self.time_step-5 : self.time_step, :6][:, index].reshape(-1, 1)))
+			scaled_robot[:, index] = np.squeeze(min_max_scalar.transform(self.robot_pose_data[:, index].reshape(-1, 1)))
 
 			#instead of self.action_data
 			scaled_candidate_action = np.zeros((10,6)).astype(np.float32)
 			scaled_candidate_action[:, index] = np.squeeze(min_max_scalar.transform(candidate_action_r[:, index].reshape(-1, 1)))
 
-		self.robot_data_scaled[self.time_step] = scaled_robot
-		self.action_data_scaled[self.time_step] = scaled_candidate_action
+		self.robot_data_scaled = scaled_robot
+		self.action_data_scaled = scaled_candidate_action
 		scaled_action_r = np.concatenate((scaled_robot, scaled_candidate_action), axis=0).astype(np.float32)
-		self.action_concat[self.time_step] = scaled_action_r
+		self.action_concat= scaled_action_r
 
-		self.scaled_haptic = torch.from_numpy(self.haptic_finger_scaled[self.time_step-6:self.time_step-1]).unsqueeze(1).permute((0, 1, 4, 2, 3)) # shape: 5, 1, 3, 64, 64
-		self.scaled_action = torch.from_numpy(self.action_concat[self.time_step]).unsqueeze(1)
+		
+		self.scaled_haptic = torch.from_numpy(self.haptic_finger_scaled).unsqueeze(1).permute((0, 1, 4, 2, 3)) # shape: 5, 1, 3, 64, 64
+		self.scaled_action = torch.from_numpy(self.action_concat).unsqueeze(1)
 
-		self.final_haptic_input[self.time_step] = self.scaled_haptic[:, 0, :, :, :]
-		self.final_action_input[self.time_step] = self.scaled_action[:, 0, :]
-		output = self.get_stem_position()
-		output = [output]
-		print("output of the model",output)
-		returned_message = Float64MultiArray(data=output)#output)
-		self.t_end = time.perf_counter()
-		delta_t = self.t_end -self.t_start
-		print("delta_t = ", delta_t)
-		return predResponse(returned_message)
-
+		self.final_haptic_input = self.scaled_haptic[:, 0, :, :, :]
+		self.final_action_input= self.scaled_action[:, 0, :]
 
 	def predict_tactile_seq(self):
-		#print("and we need to predict a tactile sequence")
+        #print("and we need to predict a tactile sequence")
 		tactile_prediction = self.pred_model.forward(self.scaled_action, self.scaled_haptic)  #<class 'torch.Tensor'>
 		return tactile_prediction
-	
+
 	def pred_to_stem_detection(self, tac_pred_frame):
 		# tac_norm = tac_pred_frame - self.haptic_finger_data[0] / 255.0
 		tac_norm = tac_pred_frame[2] - tac_pred_frame[6]
 		tactile_tensor = tac_norm.unsqueeze(0) # torch
 		stem_pose = self.local_model(tactile_tensor.float()).item() # torch
 		print("stem_pose", stem_pose)
-		self.localisation[self.time_step] = stem_pose
+		self.localisation = stem_pose
 
 		return stem_pose
 
@@ -213,14 +210,13 @@ class PushingController:
 		print("do i pass from here?")
 		#print("but before we have to get the stem position")
 		tactile_prediction_seq = self.predict_tactile_seq().squeeze().detach()
-		self.tactile_predictions[self.time_step] = tactile_prediction_seq # -------> I should filter the bottom part of the image
+		self.tactile_predictions = tactile_prediction_seq # -------> I should filter the bottom part of the image
 		# local_input = tactile_prediction_seq[1]-tactile_prediction_seq[0]
 		# print(local_input.shape)
 		stem_pose = self.pred_to_stem_detection(tactile_prediction_seq)
-		
+
 		return stem_pose
-	
+
 
 if __name__ == '__main__':
-	pc = PushingController()
-	rospy.spin()
+    pc = PushingController()

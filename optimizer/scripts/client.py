@@ -89,16 +89,17 @@ class RobotMPC():
     def gen_opt_traj(self):
         initial_theta = np.zeros(self.prediction_horizon)
         bounds = None
-        result = minimize(self.obj_func, initial_theta, bounds=bounds,method='BFGS'  ,tol = 0.001)
+        optimizer_options = {'verbose': 3, 'xtol':1e-08, 'gtol':1e-08,  'maxiter':20, 'disp':True}
+        result = minimize(self.obj_func, initial_theta, bounds=bounds, method='trust-constr'  ,options= optimizer_options)
         optimal_theta = result.x
-        print(" if i exite the minimization loop this is the optimal_theta:", optimal_theta)
+        #print(" if i exite the minimization loop this is the optimal_theta:", optimal_theta)
         return optimal_theta
     
     def circular_to_cartesian(self,theta_values):
         x = np.zeros_like(theta_values+1)
         y = np.zeros_like(theta_values+1)
         cand =[]
-        constant_values = np.array([0.7, 0.726858, 0.0265717, 0.686072])
+        constant_values = np.array([0.7, 114.38760473,  84.13176385,  65.16388286]) #last three are euler angles
         for i in range(len(theta_values)):
             if i == 0:
                 x[i] = self.initial_position[0]
@@ -116,21 +117,18 @@ class RobotMPC():
         rospy.wait_for_service("predictor")
 
         try:
-            self.i += 1
-            print("how many time i call the cost function: ",self.i)
             candidate_actions = Float64MultiArray(data = self.circular_to_cartesian(theta))
             predict = rospy.ServiceProxy("predictor", pred)
-            # print(candidate_actions)
+            #print(candidate_actions)
             predicted_stem_position = predict(candidate_actions)
-            print(predicted_stem_position.stem_pose.data)
+            #print("Response of the service: ",predicted_stem_position.stem_pose.data)
             #rospy.loginfo(predicted_stem_position.stem_pose)  # it gives me a float multy array msg layout
             pred_berry_pose = np.array(self.finger_pose[0]+predicted_stem_position.stem_pose.data, self.finger_pose[1])
         except rospy.ServiceException as e:
             print("service exeption %s", e)
 
         cost = np.linalg.norm(self.target_position-pred_berry_pose)**2 + (self.center_finger - predicted_stem_position.stem_pose.data[0])**2
-        print("cost evolution",cost)
-        return  cost
+        return cost
 
     
     def pub_next_pose(self):  #this goes to the robot
@@ -145,14 +143,14 @@ class RobotMPC():
         self.optimal_traj_pub.publish(pose_msg)
 
     def loop(self):
-        print("loop")
+        print("Let's start")
         rate=rospy.Rate(50)    
 
         while not rospy.is_shutdown():
 
             try:
                 self.opt_theta = self.gen_opt_traj()
-                print("optimal_theta = ", self.opt_theta)
+                print("Minimization done -> optimal_theta = ", self.opt_theta)
                 self.optimal_trajectory = self.circular_to_cartesian(self.opt_theta)
                 print("opt_x = {}, opt_y = {}".format(self.optimal_trajectory[0],self.optimal_trajectory[1]))
                 self.pub_next_pose()
