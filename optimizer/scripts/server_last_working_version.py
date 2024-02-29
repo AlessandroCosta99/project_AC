@@ -127,7 +127,7 @@ class PushingController:
 	
 	def callback(self, robot_poes_msg, haptic_finger_msg):
 		# self.stop = robot_poes_msg.data[-1]
-		print("t_step = ",self.time_step)
+		print(self.time_step)
 		if self.stop == 0:
 			
 
@@ -187,8 +187,9 @@ class PushingController:
 		self.final_action_input[self.time_step] = self.scaled_action[:, 0, :]
 		output = self.get_stem_position()
 		output = [output]
-		returned_message = Float64MultiArray(data=output)
-		
+		print(output)
+		returned_message = Float64MultiArray(data=output)#output)
+		print(returned_message.data)
 		return predResponse(returned_message)
 
 	
@@ -208,6 +209,7 @@ class PushingController:
 		return stem_pose
 
 	def get_stem_position(self):
+		print("do i pass from here?")
 		#print("but before we have to get the stem position")
 		tactile_prediction_seq = self.predict_tactile_seq().squeeze().detach()
 		self.tactile_predictions[self.time_step] = tactile_prediction_seq # -------> I should filter the bottom part of the image
