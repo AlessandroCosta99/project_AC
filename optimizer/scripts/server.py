@@ -191,6 +191,15 @@ class PushingController:
 		
 		return predResponse(returned_message)
 
+	def get_stem_position(self):
+		#print("but before we have to get the stem position")
+		tactile_prediction_seq = self.predict_tactile_seq().squeeze().detach()
+		self.tactile_predictions[self.time_step] = tactile_prediction_seq # -------> I should filter the bottom part of the image
+		# local_input = tactile_prediction_seq[1]-tactile_prediction_seq[0]
+		# print(local_input.shape)
+		stem_pose = self.pred_to_stem_detection(tactile_prediction_seq)
+		
+		return stem_pose
 	
 	def predict_tactile_seq(self):
 		#print("and we need to predict a tactile sequence")
@@ -207,15 +216,6 @@ class PushingController:
 
 		return stem_pose
 
-	def get_stem_position(self):
-		#print("but before we have to get the stem position")
-		tactile_prediction_seq = self.predict_tactile_seq().squeeze().detach()
-		self.tactile_predictions[self.time_step] = tactile_prediction_seq # -------> I should filter the bottom part of the image
-		# local_input = tactile_prediction_seq[1]-tactile_prediction_seq[0]
-		# print(local_input.shape)
-		stem_pose = self.pred_to_stem_detection(tactile_prediction_seq)
-		
-		return stem_pose
 	
 
 if __name__ == '__main__':
